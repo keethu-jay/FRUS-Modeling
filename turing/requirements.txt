@@ -1,0 +1,5 @@
+# Python environment for Turing / local preprocessing scripts in this folder.
+# Suggested on cluster: conda create -n eco-sentry python=3.11 && pip install -r requirements.txt
+
+numpy>=1.24
+rasterio>=1.3
