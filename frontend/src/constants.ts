@@ -6,6 +6,12 @@ export const DEFAULT_ZOOM = 11.2
 /** LiDAR curb linework is tiled / simplified for close views only */
 export const CURB_LAYER_MIN_ZOOM = 13
 
+/** When enabling curbs from a city-wide view, land here so the raised-lip styling reads */
+export const CURB_FOCUS_ZOOM = 14.5
+
+/** Upper bound (feet) for color/width interpolation on `barrier_height_ft` in curb GeoJSON */
+export const CURB_BARRIER_HEIGHT_FT_MAX = 0.85
+
 /** Rainfall scenario values (inches) — matches PRD §7.4 */
 export const RAIN_INCH_MIN = 1
 export const RAIN_INCH_MAX = 3

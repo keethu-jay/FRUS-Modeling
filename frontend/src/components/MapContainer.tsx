@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { CURB_LAYER_MIN_ZOOM, DEFAULT_ZOOM, NYC_CENTER } from '../constants'
+import {
+  CURB_BARRIER_HEIGHT_FT_MAX,
+  CURB_FOCUS_ZOOM,
+  CURB_LAYER_MIN_ZOOM,
+  DEFAULT_ZOOM,
+  NYC_CENTER,
+} from '../constants'
 import { floodTileUrlTemplate } from '../lib/tileUrl'
 import { useGeoTiffMask } from '../hooks/useGeoTiffMask'
 import type { LayerVisibility } from '../types'
@@ -14,6 +20,7 @@ const SOURCE_CURB  = 'curb-lidar'
 const SOURCE_CATCH = 'catch-basins'
 
 const LAYER_MASK          = 'eco-mask-raster'
+const LAYER_CURB_SHADOW = 'eco-curb-shadow'
 const LAYER_CURB          = 'eco-curb-lines'
 const LAYER_FLOOD         = 'eco-flood-raster'
 const LAYER_CATCH         = 'eco-catch-points'
@@ -123,27 +130,9 @@ export default function MapContainer({
       // ── Layer stack (bottom → top) ─────────────────────────────────────────
       // NOTE: LAYER_MASK is added later via the maskResult effect (once the
       // GeoTIFF has been decoded and rendered to a canvas image).
-
-      // Curb skeleton — white lines from min zoom (opacity was 0 at z13 before → invisible)
-      map.addLayer({
-        id: LAYER_CURB,
-        type: 'line',
-        source: SOURCE_CURB,
-        minzoom: CURB_LAYER_MIN_ZOOM,
-        paint: {
-          'line-color': '#ffffff',
-          'line-width': 1,
-          'line-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            CURB_LAYER_MIN_ZOOM,
-            0.62,
-            14,
-            0.78,
-          ],
-        },
-      })
+      //
+      // Flood raster must sit BELOW curb lines — otherwise ~0.92 opacity depth
+      // tiles paint over the LiDAR skeleton and it looks like curbs "do nothing".
 
       map.addLayer({
         id: LAYER_FLOOD,
@@ -208,7 +197,102 @@ export default function MapContainer({
         },
       })
 
+      // Curb as raised lip: soft shadow + brighter crest; height from barrier_height_ft (ft)
+      const heightExpr: mapboxgl.ExpressionSpecification = [
+        'min',
+        ['coalesce', ['get', 'barrier_height_ft'], 0.08],
+        CURB_BARRIER_HEIGHT_FT_MAX,
+      ]
+
+      map.addLayer({
+        id: LAYER_CURB_SHADOW,
+        type: 'line',
+        source: SOURCE_CURB,
+        minzoom: CURB_LAYER_MIN_ZOOM,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#060604',
+          'line-blur': ['interpolate', ['linear'], ['zoom'], 14, 0.6, 17, 2.4],
+          'line-width': [
+            '*',
+            ['interpolate', ['linear'], ['zoom'], CURB_LAYER_MIN_ZOOM, 1.6, 15, 3.4, 17, 5.2],
+            [
+              'interpolate',
+              ['linear'],
+              heightExpr,
+              0,
+              0.85,
+              CURB_BARRIER_HEIGHT_FT_MAX,
+              1.2,
+            ],
+          ],
+          'line-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            CURB_LAYER_MIN_ZOOM,
+            0.08,
+            14,
+            0.22,
+            15.5,
+            0.38,
+            17,
+            0.52,
+          ],
+        },
+      })
+
+      map.addLayer({
+        id: LAYER_CURB,
+        type: 'line',
+        source: SOURCE_CURB,
+        minzoom: CURB_LAYER_MIN_ZOOM,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': [
+            'interpolate',
+            ['linear'],
+            heightExpr,
+            0,
+            '#8f9f72',
+            0.18,
+            '#b8c896',
+            0.38,
+            '#dce6a8',
+            CURB_BARRIER_HEIGHT_FT_MAX,
+            '#f7b720',
+          ],
+          'line-width': [
+            '*',
+            ['interpolate', ['linear'], ['zoom'], CURB_LAYER_MIN_ZOOM, 0.75, 15, 1.9, 17, 3.1],
+            [
+              'interpolate',
+              ['linear'],
+              heightExpr,
+              0,
+              0.72,
+              CURB_BARRIER_HEIGHT_FT_MAX,
+              1.45,
+            ],
+          ],
+          'line-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            CURB_LAYER_MIN_ZOOM,
+            0.22,
+            14,
+            0.52,
+            15.5,
+            0.78,
+            17,
+            0.92,
+          ],
+        },
+      })
+
       const lv = layersRef.current
+      setLayerVisibility(map, LAYER_CURB_SHADOW, lv.curbLidar)
       setLayerVisibility(map, LAYER_CURB, lv.curbLidar)
       setLayerVisibility(map, LAYER_CATCH,          lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_CLUSTER,  lv.catchBasins)
@@ -249,7 +333,7 @@ export default function MapContainer({
         source: SOURCE_MASK,
         paint: { 'raster-opacity': 0.72 },
       },
-      LAYER_CURB, // insert below curb lines
+      LAYER_CURB_SHADOW, // below curb highlight stack; above flood + sinks
     )
 
     setLayerVisibility(map, LAYER_MASK, layersRef.current.permeabilityNdvi)
@@ -267,7 +351,8 @@ export default function MapContainer({
     const map = mapRef.current
     if (!map?.isStyleLoaded() || !readyRef.current) return
     setLayerVisibility(map, LAYER_MASK,          layers.permeabilityNdvi)
-    setLayerVisibility(map, LAYER_CURB,          layers.curbLidar)
+    setLayerVisibility(map, LAYER_CURB_SHADOW, layers.curbLidar)
+    setLayerVisibility(map, LAYER_CURB, layers.curbLidar)
     setLayerVisibility(map, LAYER_CATCH,          layers.catchBasins)
     setLayerVisibility(map, LAYER_CATCH_CLUSTER,  layers.catchBasins)
     setLayerVisibility(map, LAYER_CATCH_COUNT,    layers.catchBasins)
@@ -277,8 +362,8 @@ export default function MapContainer({
   useEffect(() => {
     const map = mapRef.current
     if (!map?.isStyleLoaded() || !readyRef.current || !layers.curbLidar) return
-    if (map.getZoom() < CURB_LAYER_MIN_ZOOM) {
-      map.easeTo({ zoom: CURB_LAYER_MIN_ZOOM, duration: 750 })
+    if (map.getZoom() < CURB_FOCUS_ZOOM) {
+      map.easeTo({ zoom: CURB_FOCUS_ZOOM, duration: 750 })
     }
   }, [mapReady, layers.curbLidar])
 
