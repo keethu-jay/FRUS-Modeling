@@ -3,7 +3,7 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import {
   CURB_BARRIER_HEIGHT_FT_MAX,
-  CURB_FOCUS_ZOOM,
+  CURB_DATA_BOUNDS,
   CURB_LAYER_MIN_ZOOM,
   DEFAULT_ZOOM,
   NYC_CENTER,
@@ -27,9 +27,11 @@ const LAYER_CATCH         = 'eco-catch-points'
 const LAYER_CATCH_CLUSTER = 'eco-catch-clusters'
 const LAYER_CATCH_COUNT   = 'eco-catch-count'
 
-// PRD §7.2 — vector paths under /data/vectors/
-const CURB_GEOJSON  = '/data/vectors/curbs.geojson'
+// PRD §7.2 — curb mesh served as decimated GeoJSON (see scripts/clip_curbs_subset.py)
+const CURB_GEOJSON_URL = '/data/vectors/curbs_web.geojson'
 const CATCH_GEOJSON = '/data/vectors/catch_basins.geojson'
+
+const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as [] }
 
 function setLayerVisibility(map: mapboxgl.Map, layerId: string, on: boolean) {
   if (!map.getLayer(layerId)) return
@@ -64,6 +66,7 @@ export default function MapContainer({
   const rainfallRef  = useRef(rainfallInches)
   const timeStepRef  = useRef(timeStep)
   const layersRef    = useRef(layers)
+  const curbFetchRef = useRef<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
   const [mapReady, setMapReady] = useState(false)
 
@@ -110,11 +113,10 @@ export default function MapContainer({
         tileSize: 256,
       })
 
-      // Curb geometry GeoJSON (PRD §7.2)
-      // 200K LineStrings, WGS84. For production: upload to Mapbox Studio.
+      // Curb LiDAR — loaded lazily when the user enables the layer (see curb fetch effect).
       map.addSource(SOURCE_CURB, {
         type: 'geojson',
-        data: CURB_GEOJSON,
+        data: EMPTY_FC,
         generateId: true,
       })
 
@@ -307,6 +309,7 @@ export default function MapContainer({
 
     return () => {
       readyRef.current = false
+      curbFetchRef.current = 'idle'
       setMapReady(false)
       map.remove()
       mapRef.current = null
@@ -359,14 +362,73 @@ export default function MapContainer({
     setLayerVisibility(map, LAYER_CATCH_COUNT,    layers.catchBasins)
   }, [layers])
 
-  // When curb layer needs z≥13, ease up so toggling on actually reveals data
+  // Lazy-fetch curb mesh + fly to pilot extent (mesh is not citywide — see CURB_DATA_BOUNDS).
   useEffect(() => {
-    const map = mapRef.current
-    if (!map?.isStyleLoaded() || !readyRef.current || !layers.curbLidar) return
-    if (map.getZoom() < CURB_FOCUS_ZOOM) {
-      map.easeTo({ zoom: CURB_FOCUS_ZOOM, duration: 750 })
+    if (!layers.curbLidar) {
+      if (curbFetchRef.current === 'error') curbFetchRef.current = 'idle'
+      return
     }
-  }, [mapReady, layers.curbLidar])
+
+    const map = mapRef.current
+    if (!map?.isStyleLoaded() || !readyRef.current) return
+
+    const src = map.getSource(SOURCE_CURB) as mapboxgl.GeoJSONSource | undefined
+    if (!src) return
+
+    let cancelled = false
+
+    const flyToCurbs = () => {
+      if (cancelled || !layersRef.current.curbLidar) return
+      map.fitBounds(CURB_DATA_BOUNDS as mapboxgl.LngLatBoundsLike, {
+        padding: 56,
+        duration: 950,
+        maxZoom: 17,
+      })
+    }
+
+    if (curbFetchRef.current === 'ready') {
+      flyToCurbs()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (curbFetchRef.current === 'loading') {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    curbFetchRef.current = 'loading'
+
+    fetch(CURB_GEOJSON_URL)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((data: unknown) => {
+        if (cancelled) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Mapbox accepts standard GeoJSON objects
+        src.setData(data as any)
+        curbFetchRef.current = 'ready'
+        flyToCurbs()
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          console.error('[curb GeoJSON]', err)
+          curbFetchRef.current = 'error'
+        }
+      })
+      .finally(() => {
+        if (cancelled && curbFetchRef.current === 'loading') {
+          curbFetchRef.current = 'idle'
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [layers.curbLidar, mapReady])
 
   if (!accessToken) {
     return (
