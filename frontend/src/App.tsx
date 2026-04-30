@@ -58,8 +58,12 @@ export default function App() {
         ))}
       </div>
 
+      {/* Both views are absolutely positioned so each map always has full
+          dimensions — visibility:hidden (Tailwind "invisible") preserves layout
+          so Mapbox can read correct container size on init. */}
+
       {/* Flood simulation view */}
-      <div className={view === 'flood-sim' ? 'h-full w-full' : 'hidden'}>
+      <div className={`absolute inset-0 transition-opacity duration-200 ${view === 'flood-sim' ? 'z-10' : 'invisible pointer-events-none'}`}>
         <MapContainer
           accessToken={accessToken}
           rainfallInches={rainfallInches}
@@ -85,7 +89,7 @@ export default function App() {
       </div>
 
       {/* Permeability mask tileset view */}
-      <div className={view === 'permeability' ? 'h-full w-full' : 'hidden'}>
+      <div className={`absolute inset-0 transition-opacity duration-200 ${view === 'permeability' ? 'z-10' : 'invisible pointer-events-none'}`}>
         <PermeabilityMaskMap accessToken={accessToken} />
       </div>
     </div>

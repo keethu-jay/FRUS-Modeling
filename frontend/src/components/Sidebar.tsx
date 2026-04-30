@@ -188,7 +188,7 @@ export default function Sidebar({
           <ToggleRow
             id="layer-curb"
             icon={MapPin}
-            label="Curb geometry (LiDAR)"
+            label="Curb geometry (LiDAR) — zoom 13+"
             checked={layers.curbLidar}
             onChange={(v) => onLayersChange({ ...layers, curbLidar: v })}
           />

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { DEFAULT_ZOOM, NYC_CENTER } from '../constants'
 import { floodTileUrlTemplate } from '../lib/tileUrl'
-import { useGeoTiffMask } from '../hooks/useGeoTiffMask'
 import type { LayerVisibility } from '../types'
+
+// Hosted Mapbox raster tileset — same source used by PermeabilityMaskMap
+const PERM_TILESET = 'mapbox://keethu-j.7x6izdee'
 
 const STYLE = 'mapbox://styles/mapbox/dark-v11'
 
@@ -58,13 +60,6 @@ export default function MapContainer({
   const timeStepRef  = useRef(timeStep)
   const layersRef    = useRef(layers)
 
-  const [mapReady, setMapReady] = useState(false)
-
-  // Load final_mask.tif in the browser — rendered as chartreuse overlay
-  const { result: maskResult, loading: maskLoading, error: maskError } = useGeoTiffMask(
-    '/data/final_mask.tif',
-  )
-
   useEffect(() => {
     rainfallRef.current = rainfallInches
     timeStepRef.current = timeStep
@@ -95,6 +90,15 @@ export default function MapContainer({
     map.addControl(new mapboxgl.NavigationControl({ visualizePitch: false }), 'top-right')
 
     map.on('load', () => {
+      // ── Sources ────────────────────────────────────────────────────────────
+
+      // Permeability mask — hosted Mapbox tileset, instantly available
+      map.addSource(SOURCE_MASK, {
+        type: 'raster',
+        url: PERM_TILESET,
+        tileSize: 256,
+      })
+
       // Flood depth tiled raster (PRD §7.1)
       map.addSource(SOURCE_FLOOD, {
         type: 'raster',
@@ -102,13 +106,12 @@ export default function MapContainer({
         tileSize: 256,
       })
 
-      // Curb geometry GeoJSON (PRD §7.2 — vectors/)
-      // 200K LineStrings, WGS84. Mapbox tiles this via web worker.
-      // For production, upload to Mapbox Studio as a vector tileset.
+      // Curb geometry GeoJSON (PRD §7.2)
+      // 200K LineStrings, WGS84. For production: upload to Mapbox Studio.
       map.addSource(SOURCE_CURB, {
         type: 'geojson',
         data: CURB_GEOJSON,
-        generateId: true,   // faster internal indexing for large datasets
+        generateId: true,
       })
 
       // Catch basin sinks GeoJSON — clustered for 154K points (PRD §7.2)
@@ -120,19 +123,36 @@ export default function MapContainer({
         clusterMaxZoom: 14,
       })
 
-      // Layer stack bottom→top: curb → flood → catch
-      // LAYER_MASK inserted below LAYER_CURB once GeoTIFF loads
+      // ── Layer stack (bottom → top) ─────────────────────────────────────────
+
+      // Permeability raster — bottommost, toggleable
+      map.addLayer({
+        id: LAYER_MASK,
+        type: 'raster',
+        source: SOURCE_MASK,
+        paint: {
+          'raster-opacity': 0.7,
+          'raster-color': [
+            'step',
+            ['raster-value'],
+            'rgba(0,0,0,0)',   // 0 / nodata → transparent
+            0.5,
+            '#2ecc71',         // 1 → permeable green
+          ],
+          'raster-color-range': [0, 1],
+        },
+      })
+
+      // Curb skeleton — white lines, fade in at zoom 13
       map.addLayer({
         id: LAYER_CURB,
         type: 'line',
         source: SOURCE_CURB,
-        // Street-skeleton physics lines — only visible at close zoom
-        minzoom: 14,
+        minzoom: 13,
         paint: {
           'line-color': '#ffffff',
           'line-width': 1,
-          // Fade in from zoom 14→15 so they don't pop abruptly
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.65],
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, 0.65],
         },
       })
 
@@ -200,13 +220,13 @@ export default function MapContainer({
       })
 
       const lv = layersRef.current
-      setLayerVisibility(map, LAYER_CURB,          lv.curbLidar)
+      setLayerVisibility(map, LAYER_MASK,           lv.permeabilityNdvi)
+      setLayerVisibility(map, LAYER_CURB,           lv.curbLidar)
       setLayerVisibility(map, LAYER_CATCH,          lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_CLUSTER,  lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_COUNT,    lv.catchBasins)
 
       readyRef.current = true
-      setMapReady(true)
       applyFloodScenario(map, rainfallRef.current, timeStepRef.current)
     })
 
@@ -214,37 +234,10 @@ export default function MapContainer({
 
     return () => {
       readyRef.current = false
-      setMapReady(false)
       map.remove()
       mapRef.current = null
     }
   }, [accessToken])
-
-  // ── Add permeability mask (GeoTIFF) once both map + TIF are ready ────────
-  useEffect(() => {
-    if (!mapReady || !maskResult || !mapRef.current) return
-    const map = mapRef.current
-    if (map.getSource(SOURCE_MASK)) return
-
-    map.addSource(SOURCE_MASK, {
-      type: 'image',
-      url: maskResult.imageUrl,
-      coordinates: maskResult.coordinates,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
-
-    map.addLayer(
-      {
-        id: LAYER_MASK,
-        type: 'raster',
-        source: SOURCE_MASK,
-        paint: { 'raster-opacity': 0.65 },
-      },
-      LAYER_CURB, // insert below curb lines
-    )
-
-    setLayerVisibility(map, LAYER_MASK, layersRef.current.permeabilityNdvi)
-  }, [mapReady, maskResult])
 
   // ── Flood scenario updates ───────────────────────────────────────────────
   useEffect(() => {
@@ -257,11 +250,11 @@ export default function MapContainer({
   useEffect(() => {
     const map = mapRef.current
     if (!map?.isStyleLoaded() || !readyRef.current) return
-    setLayerVisibility(map, LAYER_MASK,         layers.permeabilityNdvi)
-    setLayerVisibility(map, LAYER_CURB,         layers.curbLidar)
-    setLayerVisibility(map, LAYER_CATCH,         layers.catchBasins)
-    setLayerVisibility(map, LAYER_CATCH_CLUSTER, layers.catchBasins)
-    setLayerVisibility(map, LAYER_CATCH_COUNT,   layers.catchBasins)
+    setLayerVisibility(map, LAYER_MASK,          layers.permeabilityNdvi)
+    setLayerVisibility(map, LAYER_CURB,          layers.curbLidar)
+    setLayerVisibility(map, LAYER_CATCH,          layers.catchBasins)
+    setLayerVisibility(map, LAYER_CATCH_CLUSTER,  layers.catchBasins)
+    setLayerVisibility(map, LAYER_CATCH_COUNT,    layers.catchBasins)
   }, [layers])
 
   if (!accessToken) {
@@ -290,19 +283,6 @@ export default function MapContainer({
         role="application"
         aria-label="Eco-Sentry NYC map"
       />
-
-      {maskLoading && (
-        <div className="pointer-events-none absolute top-3 right-14 z-10 flex items-center gap-2 rounded-full border border-khaki/30 bg-zinc-950/85 px-3 py-1.5 text-[11px] text-stone-300 backdrop-blur-md">
-          <span className="inline-block size-2.5 animate-spin rounded-full border-2 border-chartreuse border-t-transparent" />
-          Loading permeability mask…
-        </div>
-      )}
-
-      {maskError && !maskLoading && (
-        <div className="pointer-events-none absolute top-3 right-14 z-10 max-w-xs rounded-lg border border-persimmon/40 bg-zinc-950/90 px-3 py-1.5 text-[11px] text-persimmon backdrop-blur-md">
-          Mask error: {maskError}
-        </div>
-      )}
     </div>
   )
 }
