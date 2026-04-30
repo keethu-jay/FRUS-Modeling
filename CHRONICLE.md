@@ -283,3 +283,42 @@ All TypeScript type checks pass after refactoring. `TIME_STEP_MAX_FLOOD` is now 
 ### What was done
 - Updated `turing/requirements.txt` with all new pipeline dependencies: `scipy`, `scikit-image`, `scikit-learn`, `geopandas`, `shapely`, `Pillow`, `pdal`, `mpi4py`.
 - Install on Turing: `pip install -r turing/requirements.txt` inside `~/flood_env/`.
+
+---
+
+## [CATCH-BASINS] NYCDEP Catch Basin Integration
+
+**Date:** 2026-04-29
+**Status:** COMPLETED
+
+### What was done
+
+**Data**: Integrated `NYCDEP_Citywide_Catch_Basins_20260430.geojson` (77 MB, 154,212 WGS84 points from NYC DEP). Each feature carries `unitid`, `point_x`/`point_y` (EPSG:2263 feet), and assorted metadata.
+
+**Frontend** (`frontend/public/data/vectors/catch_basins.geojson`):
+- Slimmed the 77 MB file to 20.8 MB by stripping all properties except `unitid`.
+- Replaced the 3-point demo placeholder with all 154,212 real catch basin locations.
+- Enabled Mapbox GL JS clustering on `SOURCE_CATCH` (`cluster: true, clusterRadius: 50, clusterMaxZoom: 14`).
+- Added `LAYER_CATCH_CLUSTER` (amber circles, stepped radius by `point_count`) and `LAYER_CATCH_COUNT` (symbol layer with `point_count_abbreviated` labels) for zoom ≤ 14.
+- `LAYER_CATCH` (individual amber circles) only renders at zoom > 14 via `filter: ['!', ['has', 'point_count']]`.
+- All three layers respect the existing `catchBasins` toggle in `LayerVisibility`.
+
+**Simulation** (`turing/run_flood_sim.py`):
+- Added `--catch-basins` optional argument (path to binary sink raster).
+- After each SWE sub-step, applies drainage: `h[sink_mask] = max(0, h[sink_mask] - DRAIN_RATE_FT_S * dt)` where `DRAIN_RATE_FT_S = 0.01` ft/s.
+- Sink raster broadcast to all MPI ranks alongside DEM and permeability mask.
+
+**New utility** (`turing/prepare_catch_basins.py`):
+- Reads the raw NYCDEP GeoJSON on the Turing cluster.
+- Converts `point_x`/`point_y` (EPSG:2263 ft) to DEM grid row/col via `rasterio.transform.rowcol`.
+- Writes `catch_basin_sinks.tif` (uint8, LZW compressed) — 1 where a basin exists, 0 elsewhere.
+- Run once before submitting `flood_sim.sh`.
+
+**SLURM** (`turing/slurm/flood_sim.sh`):
+- Added `SINKS` variable and `--catch-basins "$SINKS"` to all three `mpirun` calls.
+- Added prerequisite comment with the `prepare_catch_basins.py` invocation.
+
+### Next steps (manual on Turing)
+1. Copy `NYCDEP_Citywide_Catch_Basins_20260430.geojson` to Turing (or use scp).
+2. `python turing/prepare_catch_basins.py --geojson <path> --dem ~/flood_env/dem.tif --output ~/flood_env/catch_basin_sinks.tif`
+3. Submit flood simulation: `sbatch turing/slurm/flood_sim.sh`

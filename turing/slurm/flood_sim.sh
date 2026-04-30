@@ -5,6 +5,11 @@
 # 8 timestep GeoTIFFs + XYZ tile trees for the frontend.
 #
 # Pre-requisites: dem.tif, final_mask.tif, watershed_basins.tif must exist.
+# Catch basins: run prepare_catch_basins.py once before this job:
+#   python turing/prepare_catch_basins.py \
+#       --geojson NYCDEP_Citywide_Catch_Basins_20260430.geojson \
+#       --dem     ~/flood_env/dem.tif \
+#       --output  ~/flood_env/catch_basin_sinks.tif
 #
 # Output tiles: ~/flood_env/flood_outputs/{n}in_{t}min/{z}/{x}/{y}.png
 # After job, rsync to frontend:
@@ -34,6 +39,7 @@ source ~/flood_env/bin/activate
 DEM="$HOME/flood_env/dem.tif"
 MASK="$HOME/flood_env/final_mask.tif"
 BASINS="$HOME/flood_env/watershed_basins.tif"
+SINKS="$HOME/flood_env/catch_basin_sinks.tif"
 OUT_DIR="$HOME/flood_env/flood_outputs"
 REPO="$HOME/flood_env/FRUS-Modeling"
 TIMESTEPS="0,5,10,15,20,30,45,60"
@@ -45,13 +51,14 @@ for RAIN in 1 2 3; do
     echo "[flood_sim] rainfall=${RAIN}in  start=$(date)"
     echo "========================================"
     mpirun -np 16 python "$REPO/turing/run_flood_sim.py" \
-        --dem        "$DEM"       \
-        --mask       "$MASK"      \
-        --basins     "$BASINS"    \
-        --rainfall   $RAIN        \
-        --duration   60           \
-        --timesteps  "$TIMESTEPS" \
-        --output-dir "$OUT_DIR"
+        --dem           "$DEM"    \
+        --mask          "$MASK"   \
+        --basins        "$BASINS" \
+        --catch-basins  "$SINKS"  \
+        --rainfall      $RAIN     \
+        --duration      60        \
+        --timesteps     "$TIMESTEPS" \
+        --output-dir    "$OUT_DIR"
     echo "[flood_sim] rainfall=${RAIN}in  done=$(date)"
 done
 

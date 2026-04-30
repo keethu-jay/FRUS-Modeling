@@ -18,13 +18,20 @@ Output per timestep: flood_{n}in_{t}min.tif + XYZ tiles under output-dir/
 
 Usage (SLURM + mpirun):
     mpirun -np 16 python run_flood_sim.py \\
-        --dem         ./dem.tif \\
-        --mask        ./final_mask.tif \\
-        --basins      ./watershed_basins.tif \\
-        --rainfall    3.0 \\
-        --duration    60 \\
-        --timesteps   0,5,10,15,20,30,45,60 \\
-        --output-dir  ./flood_outputs/
+        --dem           ./dem.tif \\
+        --mask          ./final_mask.tif \\
+        --basins        ./watershed_basins.tif \\
+        --catch-basins  ./catch_basin_sinks.tif \\
+        --rainfall      3.0 \\
+        --duration      60 \\
+        --timesteps     0,5,10,15,20,30,45,60 \\
+        --output-dir    ./flood_outputs/
+
+Catch-basin sink model:
+    Each catch basin drains DRAIN_RATE_FT_S feet of water per second from its
+    grid cell, applied as a negative source term after each SWE sub-step.
+    Cells without a basin are unaffected.  The raster is produced by
+    prepare_catch_basins.py from the NYCDEP GeoJSON.
 """
 
 import argparse
@@ -48,6 +55,11 @@ except ImportError:
 
 # Gravity in ft/s²
 G = 32.174
+
+# Drainage rate per catch basin cell (ft of water removed per second).
+# A typical NYC catch basin handles ~0.01 cfs/ft², equivalent to ~0.01 ft/s
+# of depth reduction at the 1-ft grid resolution.
+DRAIN_RATE_FT_S = 0.01
 
 
 # ── Color encoding ────────────────────────────────────────────────────────────
@@ -183,16 +195,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="MPI-parallel 2D SWE flood simulation for NYC"
     )
-    parser.add_argument("--dem",        required=True)
-    parser.add_argument("--mask",       required=True)
-    parser.add_argument("--basins",     required=True)
-    parser.add_argument("--rainfall",   type=float, default=3.0,
+    parser.add_argument("--dem",           required=True)
+    parser.add_argument("--mask",          required=True)
+    parser.add_argument("--basins",        required=True)
+    parser.add_argument("--catch-basins",  default=None,
+                        help="Binary sink raster from prepare_catch_basins.py (optional)")
+    parser.add_argument("--rainfall",      type=float, default=3.0,
                         help="Rainfall intensity in inches")
-    parser.add_argument("--duration",   type=int,   default=60,
+    parser.add_argument("--duration",      type=int,   default=60,
                         help="Simulation duration in minutes")
-    parser.add_argument("--timesteps",  default="0,5,10,15,20,30,45,60",
+    parser.add_argument("--timesteps",     default="0,5,10,15,20,30,45,60",
                         help="Comma-separated output times in minutes")
-    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--output-dir",    required=True)
     args = parser.parse_args()
 
     output_times = [int(x) for x in args.timesteps.split(",")]
@@ -213,10 +227,18 @@ def main() -> None:
         with rasterio.open(args.mask) as src:
             mask_full = src.read(1).astype(float)
 
+        if args.catch_basins:
+            with rasterio.open(args.catch_basins) as src:
+                sink_full = src.read(1).astype(bool)
+            print(f"[flood_sim r0] catch basins: {sink_full.sum()} sink cells loaded")
+        else:
+            sink_full = None
+            print("[flood_sim r0] no catch-basin sink raster provided — drainage disabled")
+
         total_rows, total_cols = dem_full.shape
         print(f"[flood_sim r0] grid: {total_cols} x {total_rows}  dx={dx:.2f} ft")
     else:
-        dem_full = mask_full = profile = None
+        dem_full = mask_full = sink_full = profile = None
         dx = nodata_val = total_rows = total_cols = None
 
     # Broadcast metadata
@@ -229,6 +251,7 @@ def main() -> None:
     # Broadcast full arrays (for simplicity; scatter by stripe in production)
     dem_full  = comm.bcast(dem_full,  root=0)
     mask_full = comm.bcast(mask_full, root=0)
+    sink_full = comm.bcast(sink_full, root=0)
 
     # ── Domain decomposition: row stripes ─────────────────────────────────
     rows_per_rank = total_rows // size
@@ -237,6 +260,7 @@ def main() -> None:
 
     local_dem  = dem_full [row_start:row_end, :]
     local_mask = mask_full[row_start:row_end, :]
+    local_sink = sink_full[row_start:row_end, :] if sink_full is not None else None
 
     invalid = (local_dem == nodata_val) | np.isnan(local_dem)
     wet     = ~invalid
@@ -258,6 +282,11 @@ def main() -> None:
     while sim_time_s < args.duration * 60:
         dt = cfl_dt(h, ux, uy, dx, dt_target)
         h, ux, uy = swe_step(h, ux, uy, n, dx, dx, dt, barrier, wet)
+
+        # Catch basin drainage: remove water from sink cells each sub-step
+        if local_sink is not None:
+            h[local_sink] = np.maximum(0.0, h[local_sink] - DRAIN_RATE_FT_S * dt)
+
         sim_time_s += dt
 
         sim_min = sim_time_s / 60.0
