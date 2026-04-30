@@ -126,20 +126,24 @@ export default function MapContainer({
       // ── Layer stack (bottom → top) ─────────────────────────────────────────
 
       // Permeability raster — bottommost, toggleable
+      // raster-value returns 8-bit luminosity [0,255] for a standard PNG tileset.
+      // raster-color-mix [1,0,0,0] reads the red channel directly (R=G=B for greyscale).
+      // Step at 127: impermeable/nodata (dark) → transparent, permeable (bright) → green.
       map.addLayer({
         id: LAYER_MASK,
         type: 'raster',
         source: SOURCE_MASK,
         paint: {
-          'raster-opacity': 0.7,
+          'raster-opacity': 0.75,
+          'raster-color-mix': [1, 0, 0, 0],
+          'raster-color-range': [0, 255],
           'raster-color': [
             'step',
             ['raster-value'],
-            'rgba(0,0,0,0)',   // 0 / nodata → transparent
-            0.5,
-            '#2ecc71',         // 1 → permeable green
+            'rgba(0,0,0,0)',
+            127,
+            '#2ecc71',
           ],
-          'raster-color-range': [0, 1],
         },
       })
 

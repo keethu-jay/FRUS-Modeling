@@ -56,22 +56,21 @@ function addLayer(map: mapboxgl.Map, opacityPct: number, visible: boolean): void
       'raster-opacity': opacityPct / 100,
 
       /**
-       * raster-color recolors the tile based on pixel value.
-       *
-       * `step` gives a hard binary split (no gradient between 0 and 1):
-       *   raster-value < 0.5  → transparent  (impermeable concrete / nodata border)
-       *   raster-value ≥ 0.5  → emerald green (permeable soil / grass)
-       *
-       * raster-color-range tells GL the data spans [0, 1].
+       * raster-value returns 8-bit luminosity [0, 255] for a standard PNG tileset.
+       * raster-color-mix [1,0,0,0] reads the red channel (R=G=B for greyscale tiles).
+       * Step at 127: dark pixels (impermeable/nodata) → transparent,
+       *              bright pixels (permeable) → emerald green.
+       * raster-color-range must match the actual data scale [0, 255].
        */
+      'raster-color-mix': [1, 0, 0, 0],
+      'raster-color-range': [0, 255],
       'raster-color': [
         'step',
         ['raster-value'],
-        'rgba(0,0,0,0)',  // fallback — value below first threshold
-        0.5,
-        PERMEABLE_COLOR,  // value ≥ 0.5
+        'rgba(0,0,0,0)',
+        127,
+        PERMEABLE_COLOR,
       ],
-      'raster-color-range': [0, 1],
     },
   })
   map.setLayoutProperty(LAYER_ID, 'visibility', visible ? 'visible' : 'none')
