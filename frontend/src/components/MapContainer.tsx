@@ -1,12 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { DEFAULT_ZOOM, NYC_CENTER } from '../constants'
 import { floodTileUrlTemplate } from '../lib/tileUrl'
+import { useGeoTiffMask } from '../hooks/useGeoTiffMask'
 import type { LayerVisibility } from '../types'
-
-// Hosted Mapbox raster tileset — same source used by PermeabilityMaskMap
-const PERM_TILESET = 'mapbox://keethu-j.7x6izdee'
 
 const STYLE = 'mapbox://styles/mapbox/dark-v11'
 
@@ -53,12 +51,18 @@ export default function MapContainer({
   timeStep,
   layers,
 }: MapContainerProps) {
-  const wrapRef   = useRef<HTMLDivElement>(null)
-  const mapRef    = useRef<mapboxgl.Map | null>(null)
-  const readyRef  = useRef(false)
+  const wrapRef      = useRef<HTMLDivElement>(null)
+  const mapRef       = useRef<mapboxgl.Map | null>(null)
+  const readyRef     = useRef(false)
   const rainfallRef  = useRef(rainfallInches)
   const timeStepRef  = useRef(timeStep)
   const layersRef    = useRef(layers)
+
+  const [mapReady, setMapReady] = useState(false)
+
+  // Decode final_mask.tif in the browser → explicit green pixels on canvas
+  const { result: maskResult, loading: maskLoading, error: maskError } =
+    useGeoTiffMask('/data/final_mask.tif')
 
   useEffect(() => {
     rainfallRef.current = rainfallInches
@@ -92,13 +96,6 @@ export default function MapContainer({
     map.on('load', () => {
       // ── Sources ────────────────────────────────────────────────────────────
 
-      // Permeability mask — hosted Mapbox tileset, instantly available
-      map.addSource(SOURCE_MASK, {
-        type: 'raster',
-        url: PERM_TILESET,
-        tileSize: 256,
-      })
-
       // Flood depth tiled raster (PRD §7.1)
       map.addSource(SOURCE_FLOOD, {
         type: 'raster',
@@ -124,28 +121,8 @@ export default function MapContainer({
       })
 
       // ── Layer stack (bottom → top) ─────────────────────────────────────────
-
-      // Permeability raster — bottommost, toggleable
-      // raster-value returns 8-bit luminosity [0,255] for a standard PNG tileset.
-      // raster-color-mix [1,0,0,0] reads the red channel directly (R=G=B for greyscale).
-      // Step at 127: impermeable/nodata (dark) → transparent, permeable (bright) → green.
-      map.addLayer({
-        id: LAYER_MASK,
-        type: 'raster',
-        source: SOURCE_MASK,
-        paint: {
-          'raster-opacity': 0.75,
-          'raster-color-mix': [1, 0, 0, 0],
-          'raster-color-range': [0, 255],
-          'raster-color': [
-            'step',
-            ['raster-value'],
-            'rgba(0,0,0,0)',
-            127,
-            '#2ecc71',
-          ],
-        },
-      })
+      // NOTE: LAYER_MASK is added later via the maskResult effect (once the
+      // GeoTIFF has been decoded and rendered to a canvas image).
 
       // Curb skeleton — white lines, fade in at zoom 13
       map.addLayer({
@@ -224,13 +201,13 @@ export default function MapContainer({
       })
 
       const lv = layersRef.current
-      setLayerVisibility(map, LAYER_MASK,           lv.permeabilityNdvi)
-      setLayerVisibility(map, LAYER_CURB,           lv.curbLidar)
+      setLayerVisibility(map, LAYER_CURB, lv.curbLidar)
       setLayerVisibility(map, LAYER_CATCH,          lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_CLUSTER,  lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_COUNT,    lv.catchBasins)
 
       readyRef.current = true
+      setMapReady(true)
       applyFloodScenario(map, rainfallRef.current, timeStepRef.current)
     })
 
@@ -238,10 +215,37 @@ export default function MapContainer({
 
     return () => {
       readyRef.current = false
+      setMapReady(false)
       map.remove()
       mapRef.current = null
     }
   }, [accessToken])
+
+  // ── Add permeability mask once GeoTIFF decoded + map ready ───────────────
+  useEffect(() => {
+    if (!mapReady || !maskResult || !mapRef.current) return
+    const map = mapRef.current
+    if (map.getSource(SOURCE_MASK)) return
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    map.addSource(SOURCE_MASK, {
+      type: 'image',
+      url: maskResult.imageUrl,
+      coordinates: maskResult.coordinates,
+    } as any)
+
+    map.addLayer(
+      {
+        id: LAYER_MASK,
+        type: 'raster',
+        source: SOURCE_MASK,
+        paint: { 'raster-opacity': 0.72 },
+      },
+      LAYER_CURB, // insert below curb lines
+    )
+
+    setLayerVisibility(map, LAYER_MASK, layersRef.current.permeabilityNdvi)
+  }, [mapReady, maskResult])
 
   // ── Flood scenario updates ───────────────────────────────────────────────
   useEffect(() => {
@@ -287,6 +291,19 @@ export default function MapContainer({
         role="application"
         aria-label="Eco-Sentry NYC map"
       />
+
+      {maskLoading && (
+        <div className="pointer-events-none absolute top-3 right-14 z-10 flex items-center gap-2 rounded-full border border-khaki/30 bg-zinc-950/85 px-3 py-1.5 text-[11px] text-stone-300 backdrop-blur-md">
+          <span className="inline-block size-2.5 animate-spin rounded-full border-2 border-chartreuse border-t-transparent" />
+          Loading permeability mask…
+        </div>
+      )}
+
+      {maskError && !maskLoading && (
+        <div className="pointer-events-none absolute top-3 right-14 z-10 max-w-xs rounded-lg border border-persimmon/40 bg-zinc-950/90 px-3 py-1.5 text-[11px] text-persimmon backdrop-blur-md">
+          Mask: {maskError}
+        </div>
+      )}
     </div>
   )
 }

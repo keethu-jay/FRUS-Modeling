@@ -16,7 +16,9 @@ proj4.defs([
   ['EPSG:6539', '+proj=lcc +lat_1=41.03333333333333 +lat_2=40.66666666666666 +lat_0=40.16666666666666 +lon_0=-74 +x_0=300000.0000000001 +y_0=0 +datum=NAD83 +units=us-ft +no_defs'],
 ])
 
-const MAX_CANVAS_DIM = 4096
+// Keep canvas small so the Blob stays under ~1MB and loads instantly in Mapbox.
+// The mask is a binary overlay — 2048px is more than enough visual detail.
+const MAX_CANVAS_DIM = 2048
 
 function toWgs84(epsg: number, x: number, y: number): [number, number] {
   const code = `EPSG:${epsg}`
@@ -72,7 +74,15 @@ async function renderMask(url: string): Promise<GeoTiffMaskResult> {
     // impermeable pixels stay transparent (alpha = 0)
   }
   ctx.putImageData(imgData, 0, 0)
-  const imageUrl = canvas.toDataURL('image/png')
+
+  // Use a Blob URL instead of a data URL — data URLs for large canvases can
+  // exceed browser limits and cause Mapbox's image loader to fail silently.
+  const imageUrl = await new Promise<string>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(URL.createObjectURL(blob))
+      else reject(new Error('canvas.toBlob returned null'))
+    }, 'image/png')
+  })
 
   // Determine WGS84 bounding box
   const bbox = image.getBoundingBox() // [west, south, east, north] in native CRS
