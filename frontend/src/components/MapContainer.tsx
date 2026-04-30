@@ -103,9 +103,12 @@ export default function MapContainer({
       })
 
       // Curb geometry GeoJSON (PRD §7.2 — vectors/)
+      // 200K LineStrings, WGS84. Mapbox tiles this via web worker.
+      // For production, upload to Mapbox Studio as a vector tileset.
       map.addSource(SOURCE_CURB, {
         type: 'geojson',
         data: CURB_GEOJSON,
+        generateId: true,   // faster internal indexing for large datasets
       })
 
       // Catch basin sinks GeoJSON — clustered for 154K points (PRD §7.2)
@@ -123,10 +126,13 @@ export default function MapContainer({
         id: LAYER_CURB,
         type: 'line',
         source: SOURCE_CURB,
+        // Street-skeleton physics lines — only visible at close zoom
+        minzoom: 14,
         paint: {
-          'line-color': '#D8CF00',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.4, 16, 1.2],
-          'line-opacity': 0.88,
+          'line-color': '#ffffff',
+          'line-width': 1,
+          // Fade in from zoom 14→15 so they don't pop abruptly
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.65],
         },
       })
 
