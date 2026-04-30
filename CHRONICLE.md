@@ -130,3 +130,156 @@ npm run lint         # ESLint
 ---
 
 *Last updated to match the repository state and the Eco-Sentry NYC frontend described above.*
+
+---
+
+## [INFRA] JSX → TypeScript Migration + GeoTIFF Mask Viewer
+
+**Date:** 2026-04-29
+**Status:** COMPLETED
+
+### What was done
+- Installed TypeScript (`typescript`, `@types/react`, `@types/react-dom`, `@types/proj4`, `typescript-eslint`) and GeoTIFF runtime deps (`geotiff`, `proj4`).
+- Converted all source files from `.jsx`/`.js` to `.tsx`/`.ts`: `App`, `main`, `MapContainer`, `Sidebar`, `DepthLegend`, `constants`, `lib/tileUrl`.
+- Created `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `eslint.config.js` (TypeScript-aware), `src/vite-env.d.ts`.
+- Created `src/types.ts` (`LayerVisibility`, `GeoTiffMaskResult`) and `src/hooks/useGeoTiffMask.ts`.
+- `useGeoTiffMask`: fetches `final_mask.tif` via `fetch()` + `ArrayBuffer` (avoids range-request issues with Vite dev server), decodes with `geotiff`, reprojects bounding box to WGS84 via `proj4` (supports EPSG 4326, 32618, 26918, 2263, 6539), renders binary pixels to canvas (chartreuse = permeable, transparent = impermeable), returns base64 PNG + 4-corner coordinates for a Mapbox `image` source.
+- Copied `final_mask.tif` to `frontend/public/data/final_mask.tif` for browser serving.
+- Added `mapReady` state to `MapContainer` to coordinate async mask loading with Mapbox `load` event.
+- Added map constraints: `minZoom=9`, `maxZoom=18`, `maxBounds` locked to NYC metro area.
+- Added `npm run typecheck` script.
+
+### What happened
+TypeScript compilation clean on first pass after fixing three issues: (1) missing `vite/client` types for `ImportMeta.env`, (2) CSS side-effect import declarations, (3) `mapbox-gl` image source type mismatch resolved with `as any`, (4) `geotiff` `geoKeys` property not in public TypeScript interface — resolved with `(image as any).geoKeys`.
+
+### Mistakes / Gotchas
+- `geotiff`'s `fromUrl()` silently fails on Vite dev server because it uses HTTP range requests the dev server doesn't support. Fix: `fetch()` full buffer first, then `fromArrayBuffer()`.
+- `mapbox-gl` v3 bundles its own types — do NOT install `@types/mapbox-gl` (conflicts).
+
+### Output files
+- `frontend/src/` — all `.jsx` deleted, `.tsx` created
+- `frontend/public/data/final_mask.tif` — served statically for browser GeoTIFF decode
+- `frontend/tsconfig.json`, `frontend/tsconfig.node.json`
+
+---
+
+## [INFRA] Frontend Data Contract Alignment (PRD §7)
+
+**Date:** 2026-04-30
+**Status:** COMPLETED
+
+### What was done
+- Updated `constants.ts`: rainfall range 1–3 inches (was 0–10), added `TIMESTEP_MINUTES = [0,5,10,15,20,30,45,60]` array; `TIME_STEP_MAX_FLOOD = 7` (index into array).
+- Updated `lib/tileUrl.ts`: flood URL pattern changed from `/data/flood_layers/{in}/{t}/` to `/data/flood/{n}in_{t}min/` per PRD §7.1. Added `permeabilityTileUrlTemplate()` for future Turing tiles at `/data/permeability/`.
+- Updated `MapContainer.tsx`: vector sources changed from `/data/catch_basins.geojson` / `/data/curb_geometry.geojson` to `/data/vectors/catch_basins.geojson` / `/data/vectors/curbs.geojson` per PRD §7.2.
+- Updated `Sidebar.tsx`: rainfall slider step=1 (integer), timestep display shows `T+{n} min / 60 min`, added tick marks for all 8 timestep values.
+- Updated `App.tsx`: initial rainfall = 2 in (center of 1–3 range).
+- Created `frontend/public/data/vectors/` directory structure.
+- Moved `catch_basins.geojson` to `vectors/`.
+- Created `vectors/curbs.geojson` (empty FeatureCollection — populated after M-2).
+- Created `frontend/public/data/scenarios.json` manifest (PRD §7.4).
+- Created `frontend/public/data/permeability/` placeholder (receives Turing tiles after M-0).
+- Created `frontend/public/data/flood/` placeholder (receives simulation tiles after M-4).
+
+### What happened
+All TypeScript type checks pass after refactoring. `TIME_STEP_MAX_FLOOD` is now a derived constant (`TIMESTEP_MINUTES.length - 1`) so adding or removing timestep values is a single-line change.
+
+### Output files
+- `frontend/public/data/scenarios.json`
+- `frontend/public/data/vectors/catch_basins.geojson`
+- `frontend/public/data/vectors/curbs.geojson` (empty placeholder)
+
+---
+
+## [MILESTONE-0] Permeability Tile Verification — PENDING
+
+**Date:** 2026-04-30
+**Status:** IN PROGRESS — awaiting SSH verification on Turing
+
+### What was done
+- Created SLURM script `turing/slurm/gdal2tiles.sh` to re-run `gdal2tiles.py` if existing run incomplete.
+- Tiles expected at: `~/flood_env/permeability_tiles/{z}/{x}/{y}.png` on Turing.
+- Target local path after rsync: `frontend/public/data/permeability/`.
+
+### Next steps (manual)
+1. SSH to Turing: `ls -lh ~/flood_env/permeability_tiles/`
+2. If z/x/y structure present: `rsync -av ~/flood_env/permeability_tiles/ <local>/frontend/public/data/permeability/`
+3. If missing: `sbatch turing/slurm/gdal2tiles.sh`, then rsync after job.
+
+---
+
+## [MILESTONE-1] LiDAR DEM Processing — PENDING
+
+**Date:** 2026-04-30
+**Status:** PENDING — LiDAR .LAZ not yet downloaded
+
+### What was done
+- Created `turing/process_lidar.py`: PDAL pipeline to filter ground returns (class 2), rasterize to 1ft float32 GeoTIFF at EPSG:2263. Logs min/max elevation, nodata coverage, output CRS.
+- Created `turing/slurm/lidar_dem.sh`: SLURM job (64GB, 8 CPUs, A30 GPU, 2h walltime).
+
+### Next steps (manual)
+1. Download .LAZ from NOAA Digital Coast (datasets 9851 or 9689, NYC bounding box).
+2. On Turing: `cd ~/flood_env && wget <LAZ_URL> -O nyc_lidar.laz`
+3. `sbatch turing/slurm/lidar_dem.sh`
+4. Validate: `gdalinfo ~/flood_env/dem.tif` — check CRS matches `final_mask.tif`.
+5. If CRS mismatch: `gdalwarp -t_srs EPSG:4326 dem.tif dem_reprojected.tif`
+
+---
+
+## [MILESTONE-2] Curb Breakline Detection — PENDING
+
+**Date:** 2026-04-30
+**Status:** PENDING — requires dem.tif (M-1)
+
+### What was done
+- Created `turing/detect_curbs.py`: Sobel gradient on DEM, thresholds 0.25–0.5 ft/px, skeletonize binary mask, vectorize to GeoJSON LineString features with `barrier_height_ft` attribute.
+- Created `turing/slurm/curb_detect.sh`: SLURM job (32GB, 4 CPUs, 1h walltime).
+
+### Next steps (manual)
+1. After M-1: `sbatch turing/slurm/curb_detect.sh`
+2. Download: `scp <turing>:~/flood_env/curbs.geojson frontend/public/data/vectors/curbs.geojson`
+
+---
+
+## [MILESTONE-3] Watershed Transform — PENDING
+
+**Date:** 2026-04-30
+**Status:** PENDING — requires dem.tif + curbs.geojson (M-1, M-2)
+
+### What was done
+- Created `turing/run_watershed.py`: co-registers DEM to mask grid via `gdalwarp`, inverts DEM, applies permeability cost weighting (concrete=1.0x, grass=0.2x), burns curb barriers, runs `skimage.segmentation.watershed` with auto-detected minima, outputs labeled raster + basin stats CSV.
+- Created `turing/slurm/watershed.sh`: SLURM job (64GB, 16 CPUs, A30 GPU, 3h walltime).
+
+---
+
+## [MILESTONE-4] Flood Simulation (SWE) — PENDING
+
+**Date:** 2026-04-30
+**Status:** PENDING — requires dem.tif + watershed_basins.tif (M-1, M-3)
+
+### What was done
+- Created `turing/run_flood_sim.py`: MPI row-striped 2D SWE solver. Manning's n=0.013 (concrete) / 0.035 (grass). CFL-adaptive timestep. Outputs one GeoTIFF per scenario timestep + calls `gdal2tiles.py` to tile each. Color encoding per PRD §7.3.
+- Created `turing/slurm/flood_sim.sh`: 2-node SLURM job (128GB, 2×A30, 6h walltime). Loops over 3 rainfall scenarios automatically.
+- Output tile path pattern matches frontend contract: `/data/flood/{n}in_{t}min/{z}/{x}/{y}.png`.
+
+---
+
+## [MILESTONE-5] Infrastructure Recommender — PENDING
+
+**Date:** 2026-04-30
+**Status:** PENDING — requires flood outputs (M-4)
+
+### What was done
+- Created `turing/build_recommender.py`: intersects flood depth > 0.5ft + permeability=0 + large catchment basin, clusters candidates with DBSCAN (eps=50ft), ranks by priority score (mean_depth × catchment_area), outputs top-N GeoJSON Point features.
+- Output: `bioswale_recommendations.geojson` → copy to `frontend/public/data/vectors/`.
+
+---
+
+## [INFRA] Turing Requirements Update
+
+**Date:** 2026-04-30
+**Status:** COMPLETED
+
+### What was done
+- Updated `turing/requirements.txt` with all new pipeline dependencies: `scipy`, `scikit-image`, `scikit-learn`, `geopandas`, `shapely`, `Pillow`, `pdal`, `mpi4py`.
+- Install on Turing: `pip install -r turing/requirements.txt` inside `~/flood_env/`.

@@ -1,0 +1,7 @@
+{
+  "scenarios": [
+    { "rainfall_in": 1, "timesteps_min": [0, 5, 10, 15, 20, 30, 45, 60] },
+    { "rainfall_in": 2, "timesteps_min": [0, 5, 10, 15, 20, 30, 45, 60] },
+    { "rainfall_in": 3, "timesteps_min": [0, 5, 10, 15, 20, 30, 45, 60] }
+  ]
+}
