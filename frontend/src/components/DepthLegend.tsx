@@ -10,7 +10,13 @@ const STOPS = [
 
 const gradient = `linear-gradient(to right, ${STOPS.map((s) => `${s.color} ${s.x}`).join(', ')})`
 
-export default function DepthLegend() {
+interface DepthLegendProps {
+  visible: boolean
+}
+
+export default function DepthLegend({ visible }: DepthLegendProps) {
+  if (!visible) return null
+
   return (
     <div
       className="pointer-events-none fixed right-3 bottom-3 z-10 w-[min(100vw-1.5rem,17rem)] rounded-xl border border-khaki/40 bg-army/75 px-3 py-2.5 font-sans shadow-2xl backdrop-blur-xl sm:right-4 sm:bottom-4"

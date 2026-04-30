@@ -10,13 +10,13 @@ const TICK_MS = 650
 export default function App() {
   const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? ''
 
-  const [rainfallInches, setRainfallInches] = useState(RAIN_INCH_MIN + 1)
+  const [rainfallInches, setRainfallInches] = useState(0)
   const [timeStep, setTimeStep] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [layers, setLayers] = useState<LayerVisibility>({
-    permeabilityNdvi: true,
+    permeabilityNdvi: false,
     curbLidar: false,
-    catchBasins: true,
+    catchBasins: false,
   })
 
   const onLayersChange = useCallback((next: LayerVisibility) => {
@@ -49,10 +49,11 @@ export default function App() {
         layers={layers}
         onLayersChange={onLayersChange}
       />
-      <DepthLegend />
+      <DepthLegend visible={rainfallInches >= RAIN_INCH_MIN} />
       {accessToken && (
         <footer className="pointer-events-none fixed bottom-3 left-1/2 z-10 hidden -translate-x-1/2 rounded-full border border-khaki/30 bg-zinc-950/90 px-3 py-1 text-[10px] text-stone-300/90 backdrop-blur-md sm:block">
-          Mapbox · rainfall {rainfallInches} in · frame {timeStep}
+          Mapbox · rainfall{' '}
+          {rainfallInches < RAIN_INCH_MIN ? 'off' : `${rainfallInches} in`} · frame {timeStep}
         </footer>
       )}
     </div>

@@ -12,6 +12,7 @@ import type { LayerVisibility } from '../types'
 import {
   RAIN_INCH_MAX,
   RAIN_INCH_MIN,
+  RAIN_SLIDER_MIN,
   TIME_STEP_MAX_FLOOD,
   TIME_STEP_MIN,
   TIMESTEP_MINUTES,
@@ -94,21 +95,21 @@ export default function Sidebar({
         </div>
         <div className="rounded-xl border border-khaki/25 bg-army/50 px-3 py-3">
           <div className="mb-2 flex justify-between text-[11px] tabular-nums text-stone-400">
-            <span>{RAIN_INCH_MIN} in</span>
+            <span>Off</span>
             <span className="font-semibold text-honey-quartz">
-              {rainfallInches} in
+              {rainfallInches < RAIN_INCH_MIN ? 'Flood off' : `${rainfallInches} in`}
             </span>
             <span>{RAIN_INCH_MAX} in</span>
           </div>
           <input
             type="range"
-            min={RAIN_INCH_MIN}
+            min={RAIN_SLIDER_MIN}
             max={RAIN_INCH_MAX}
             step={1}
             value={rainfallInches}
             onChange={(e) => onRainfallChange(Number(e.target.value))}
             className="h-2 w-full cursor-pointer appearance-none rounded-full bg-army accent-honey-quartz"
-            aria-valuemin={RAIN_INCH_MIN}
+            aria-valuemin={RAIN_SLIDER_MIN}
             aria-valuemax={RAIN_INCH_MAX}
             aria-valuenow={rainfallInches}
             aria-label="Rainfall intensity in inches"

@@ -197,10 +197,10 @@ export default function MapContainer({
         },
       })
 
-      // Curb as raised lip: soft shadow + brighter crest; height from barrier_height_ft (ft)
+      // Height must be numeric for interpolate — coerce GeoJSON properties safely for Mapbox GL.
       const heightExpr: mapboxgl.ExpressionSpecification = [
         'min',
-        ['coalesce', ['get', 'barrier_height_ft'], 0.08],
+        ['max', 0, ['to-number', ['get', 'barrier_height_ft'], 0.08]],
         CURB_BARRIER_HEIGHT_FT_MAX,
       ]
 
@@ -231,13 +231,13 @@ export default function MapContainer({
             ['linear'],
             ['zoom'],
             CURB_LAYER_MIN_ZOOM,
-            0.08,
+            0.18,
             14,
-            0.22,
+            0.35,
             15.5,
-            0.38,
+            0.5,
             17,
-            0.52,
+            0.62,
           ],
         },
       })
@@ -280,13 +280,13 @@ export default function MapContainer({
             ['linear'],
             ['zoom'],
             CURB_LAYER_MIN_ZOOM,
-            0.22,
+            0.42,
             14,
-            0.52,
+            0.68,
             15.5,
-            0.78,
+            0.82,
             17,
-            0.92,
+            0.94,
           ],
         },
       })
@@ -331,9 +331,10 @@ export default function MapContainer({
         id: LAYER_MASK,
         type: 'raster',
         source: SOURCE_MASK,
-        paint: { 'raster-opacity': 0.72 },
+        paint: { 'raster-opacity': 0.82 },
       },
-      LAYER_CURB_SHADOW, // below curb highlight stack; above flood + sinks
+      // Sit directly above flood so permeability is not sandwiched under dense vectors
+      LAYER_CATCH_CLUSTER,
     )
 
     setLayerVisibility(map, LAYER_MASK, layersRef.current.permeabilityNdvi)
