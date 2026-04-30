@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fromArrayBuffer } from 'geotiff'
 import proj4 from 'proj4'
 import type { GeoTiffMaskResult } from '../types'
@@ -27,6 +27,52 @@ function toWgs84(epsg: number, x: number, y: number): [number, number] {
   } catch {
     throw new Error(`Cannot reproject EPSG:${epsg} → WGS84. Add its proj4 definition to useGeoTiffMask.ts`)
   }
+}
+
+/**
+ * geotiff.js exposes CRS via getGeoKeys(), not a `.geoKeys` property.
+ * Some GDAL exports omit ProjectedCSTypeGeoKey but include GTCitationGeoKey;
+ * without this we mis-read projected bounding boxes as WGS84 lon/lat.
+ */
+function inferSourceEpsg(
+  geoKeys: Partial<Record<string, unknown>> | null | undefined,
+  bbox: readonly [number, number, number, number],
+): number {
+  const pcs = geoKeys?.ProjectedCSTypeGeoKey
+  if (typeof pcs === 'number' && pcs > 0) return pcs
+
+  const geo = geoKeys?.GeographicTypeGeoKey
+  if (typeof geo === 'number' && geo > 0) return geo
+
+  const citation = geoKeys?.GTCitationGeoKey
+  if (typeof citation === 'string') {
+    const c = citation.toLowerCase()
+    if (c.includes('new york long island')) {
+      if (c.includes('2011')) return 6539
+      return 2263
+    }
+    if (c.includes('utm zone 18n') || (c.includes('utm zone 18') && c.includes('north'))) {
+      if (c.includes('nad83')) return 26918
+      return 32618
+    }
+  }
+
+  const maxAbs = Math.max(
+    Math.abs(bbox[0]),
+    Math.abs(bbox[1]),
+    Math.abs(bbox[2]),
+    Math.abs(bbox[3]),
+  )
+
+  if (maxAbs <= 180) {
+    const [w, s, e, n] = bbox
+    if (w < e && s < n && w >= -180 && e <= 180 && s >= -90 && n <= 90) return 4326
+  }
+
+  // NYC State Plane / similar projected coordinates (feet or metres)
+  if (maxAbs > 1e5 && maxAbs < 5e6) return 2263
+
+  return 4326
 }
 
 async function renderMask(url: string): Promise<GeoTiffMaskResult> {
@@ -85,13 +131,9 @@ async function renderMask(url: string): Promise<GeoTiffMaskResult> {
   })
 
   // Determine WGS84 bounding box
-  const bbox = image.getBoundingBox() // [west, south, east, north] in native CRS
-  // geoKeys is not in geotiff's public TypeScript interface but is present at runtime
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const geoKeys = (image as any).geoKeys as Record<string, number> | undefined
-  const projEpsg = geoKeys?.ProjectedCSTypeGeoKey
-  const geoEpsg = geoKeys?.GeographicTypeGeoKey
-  const epsg = projEpsg ?? geoEpsg ?? 4326
+  const bbox = image.getBoundingBox() as [number, number, number, number]
+  const geoKeys = image.getGeoKeys()
+  const epsg = inferSourceEpsg(geoKeys, bbox)
 
   let west: number, south: number, east: number, north: number
   if (epsg === 4326 || epsg === 4269) {
@@ -119,6 +161,7 @@ interface UseGeoTiffMaskState {
 }
 
 export function useGeoTiffMask(url: string): UseGeoTiffMaskState {
+  const blobRef = useRef<string | null>(null)
   const [state, setState] = useState<UseGeoTiffMaskState>({
     result: null,
     loading: true,
@@ -131,7 +174,12 @@ export function useGeoTiffMask(url: string): UseGeoTiffMaskState {
 
     renderMask(url)
       .then((result) => {
-        if (!cancelled) setState({ result, loading: false, error: null })
+        if (cancelled) {
+          if (result.imageUrl.startsWith('blob:')) URL.revokeObjectURL(result.imageUrl)
+          return
+        }
+        blobRef.current = result.imageUrl
+        setState({ result, loading: false, error: null })
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -143,6 +191,9 @@ export function useGeoTiffMask(url: string): UseGeoTiffMaskState {
 
     return () => {
       cancelled = true
+      const stale = blobRef.current
+      if (stale?.startsWith('blob:')) URL.revokeObjectURL(stale)
+      blobRef.current = null
     }
   }, [url])
 

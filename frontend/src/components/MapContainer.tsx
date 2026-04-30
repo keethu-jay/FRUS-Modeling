@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { DEFAULT_ZOOM, NYC_CENTER } from '../constants'
+import { CURB_LAYER_MIN_ZOOM, DEFAULT_ZOOM, NYC_CENTER } from '../constants'
 import { floodTileUrlTemplate } from '../lib/tileUrl'
 import { useGeoTiffMask } from '../hooks/useGeoTiffMask'
 import type { LayerVisibility } from '../types'
@@ -124,16 +124,24 @@ export default function MapContainer({
       // NOTE: LAYER_MASK is added later via the maskResult effect (once the
       // GeoTIFF has been decoded and rendered to a canvas image).
 
-      // Curb skeleton — white lines, fade in at zoom 13
+      // Curb skeleton — white lines from min zoom (opacity was 0 at z13 before → invisible)
       map.addLayer({
         id: LAYER_CURB,
         type: 'line',
         source: SOURCE_CURB,
-        minzoom: 13,
+        minzoom: CURB_LAYER_MIN_ZOOM,
         paint: {
           'line-color': '#ffffff',
           'line-width': 1,
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 14, 0.65],
+          'line-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            CURB_LAYER_MIN_ZOOM,
+            0.62,
+            14,
+            0.78,
+          ],
         },
       })
 
@@ -264,6 +272,15 @@ export default function MapContainer({
     setLayerVisibility(map, LAYER_CATCH_CLUSTER,  layers.catchBasins)
     setLayerVisibility(map, LAYER_CATCH_COUNT,    layers.catchBasins)
   }, [layers])
+
+  // When curb layer needs z≥13, ease up so toggling on actually reveals data
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map?.isStyleLoaded() || !readyRef.current || !layers.curbLidar) return
+    if (map.getZoom() < CURB_LAYER_MIN_ZOOM) {
+      map.easeTo({ zoom: CURB_LAYER_MIN_ZOOM, duration: 750 })
+    }
+  }, [mapReady, layers.curbLidar])
 
   if (!accessToken) {
     return (

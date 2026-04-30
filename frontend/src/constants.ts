@@ -3,6 +3,9 @@ export const NYC_CENTER: [number, number] = [-74.006, 40.7128]
 
 export const DEFAULT_ZOOM = 11.2
 
+/** LiDAR curb linework is tiled / simplified for close views only */
+export const CURB_LAYER_MIN_ZOOM = 13
+
 /** Rainfall scenario values (inches) — matches PRD §7.4 */
 export const RAIN_INCH_MIN = 1
 export const RAIN_INCH_MAX = 3
