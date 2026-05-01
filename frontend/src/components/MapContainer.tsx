@@ -20,8 +20,8 @@ const SOURCE_CURB  = 'curb-lidar'
 const SOURCE_CATCH = 'catch-basins'
 
 const LAYER_MASK          = 'eco-mask-raster'
-const LAYER_CURB_SHADOW = 'eco-curb-shadow'
-const LAYER_CURB          = 'eco-curb-lines'
+const LAYER_CURB_HEATMAP = 'eco-curb-heatmap'
+const LAYER_CURB        = 'eco-curb-lines'
 const LAYER_FLOOD         = 'eco-flood-raster'
 const LAYER_CATCH         = 'eco-catch-points'
 const LAYER_CATCH_CLUSTER = 'eco-catch-clusters'
@@ -32,6 +32,23 @@ const CURB_GEOJSON_URL = '/data/vectors/curbs_web.geojson'
 const CATCH_GEOJSON = '/data/vectors/catch_basins.geojson'
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as [] }
+
+/** Pilot curb GeoJSON has finite extent — skip camera jump if viewport overlaps mesh bbox */
+function viewportShowsCurbPilotExtent(map: mapboxgl.Map): boolean {
+  const v = map.getBounds()
+  if (!v) return false
+  const vw = v.getWest()
+  const ve = v.getEast()
+  const vs = v.getSouth()
+  const vn = v.getNorth()
+
+  const mw = CURB_DATA_BOUNDS[0][0]
+  const ms = CURB_DATA_BOUNDS[0][1]
+  const me = CURB_DATA_BOUNDS[1][0]
+  const mn = CURB_DATA_BOUNDS[1][1]
+
+  return !(ve < mw || vw > me || vn < ms || vs > mn)
+}
 
 function setLayerVisibility(map: mapboxgl.Map, layerId: string, on: boolean) {
   if (!map.getLayer(layerId)) return
@@ -206,44 +223,84 @@ export default function MapContainer({
         CURB_BARRIER_HEIGHT_FT_MAX,
       ]
 
+      // Purple heatmap “terrain wash” from LiDAR-derived curb barrier weights
       map.addLayer({
-        id: LAYER_CURB_SHADOW,
-        type: 'line',
+        id: LAYER_CURB_HEATMAP,
+        type: 'heatmap',
         source: SOURCE_CURB,
-        minzoom: CURB_LAYER_MIN_ZOOM,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        minzoom: 11,
         paint: {
-          'line-color': '#060604',
-          'line-blur': ['interpolate', ['linear'], ['zoom'], 14, 0.6, 17, 2.4],
-          'line-width': [
-            '*',
-            ['interpolate', ['linear'], ['zoom'], CURB_LAYER_MIN_ZOOM, 1.6, 15, 3.4, 17, 5.2],
-            [
-              'interpolate',
-              ['linear'],
-              heightExpr,
-              0,
-              0.85,
-              CURB_BARRIER_HEIGHT_FT_MAX,
-              1.2,
-            ],
+          'heatmap-weight': [
+            'interpolate',
+            ['linear'],
+            heightExpr,
+            0,
+            0.2,
+            CURB_BARRIER_HEIGHT_FT_MAX,
+            1,
           ],
-          'line-opacity': [
+          'heatmap-intensity': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            CURB_LAYER_MIN_ZOOM,
-            0.18,
-            14,
+            11,
             0.35,
-            15.5,
-            0.5,
+            13,
+            0.75,
+            15,
+            1.25,
             17,
+            1.85,
+          ],
+          'heatmap-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            11,
+            10,
+            13,
+            22,
+            15,
+            34,
+            17,
+            48,
+          ],
+          'heatmap-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            11,
+            0.28,
+            13,
+            0.42,
+            15,
+            0.52,
+            17,
+            0.48,
+          ],
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0,
+            'rgba(139, 92, 246, 0)',
+            0.12,
+            'rgba(237, 233, 254, 0.35)',
+            0.28,
+            'rgba(196, 181, 253, 0.52)',
+            0.45,
+            'rgba(167, 139, 250, 0.68)',
             0.62,
+            'rgba(126, 58, 242, 0.78)',
+            0.82,
+            'rgba(91, 33, 182, 0.86)',
+            1,
+            'rgba(59, 7, 100, 0.9)',
           ],
         },
       })
 
+      // Street-scale curb lip: darker purple = higher barrier_height_ft
       map.addLayer({
         id: LAYER_CURB,
         type: 'line',
@@ -256,25 +313,27 @@ export default function MapContainer({
             ['linear'],
             heightExpr,
             0,
-            '#8f9f72',
-            0.18,
-            '#b8c896',
-            0.38,
-            '#dce6a8',
+            '#ede9fe',
+            0.12,
+            '#ddd6fe',
+            0.28,
+            '#c4b5fd',
+            0.48,
+            '#a78bfa',
             CURB_BARRIER_HEIGHT_FT_MAX,
-            '#f7b720',
+            '#5b21b6',
           ],
           'line-width': [
             '*',
-            ['interpolate', ['linear'], ['zoom'], CURB_LAYER_MIN_ZOOM, 0.75, 15, 1.9, 17, 3.1],
+            ['interpolate', ['linear'], ['zoom'], CURB_LAYER_MIN_ZOOM, 0.85, 15, 2.2, 17, 3.6],
             [
               'interpolate',
               ['linear'],
               heightExpr,
               0,
-              0.72,
+              0.85,
               CURB_BARRIER_HEIGHT_FT_MAX,
-              1.45,
+              1.55,
             ],
           ],
           'line-opacity': [
@@ -282,19 +341,19 @@ export default function MapContainer({
             ['linear'],
             ['zoom'],
             CURB_LAYER_MIN_ZOOM,
-            0.42,
+            0.38,
             14,
-            0.68,
+            0.72,
             15.5,
-            0.82,
+            0.88,
             17,
-            0.94,
+            0.96,
           ],
         },
       })
 
       const lv = layersRef.current
-      setLayerVisibility(map, LAYER_CURB_SHADOW, lv.curbLidar)
+      setLayerVisibility(map, LAYER_CURB_HEATMAP, lv.curbLidar)
       setLayerVisibility(map, LAYER_CURB, lv.curbLidar)
       setLayerVisibility(map, LAYER_CATCH,          lv.catchBasins)
       setLayerVisibility(map, LAYER_CATCH_CLUSTER,  lv.catchBasins)
@@ -355,7 +414,7 @@ export default function MapContainer({
     const map = mapRef.current
     if (!map?.isStyleLoaded() || !readyRef.current) return
     setLayerVisibility(map, LAYER_MASK,          layers.permeabilityNdvi)
-    setLayerVisibility(map, LAYER_CURB_SHADOW, layers.curbLidar)
+    setLayerVisibility(map, LAYER_CURB_HEATMAP, layers.curbLidar)
     setLayerVisibility(map, LAYER_CURB, layers.curbLidar)
     setLayerVisibility(map, LAYER_CATCH,          layers.catchBasins)
     setLayerVisibility(map, LAYER_CATCH_CLUSTER,  layers.catchBasins)
@@ -379,6 +438,7 @@ export default function MapContainer({
 
     const flyToCurbs = () => {
       if (cancelled || !layersRef.current.curbLidar) return
+      if (viewportShowsCurbPilotExtent(map)) return
       map.fitBounds(CURB_DATA_BOUNDS as mapboxgl.LngLatBoundsLike, {
         padding: 56,
         duration: 950,

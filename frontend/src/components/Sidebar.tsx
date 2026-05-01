@@ -189,7 +189,7 @@ export default function Sidebar({
           <ToggleRow
             id="layer-curb"
             icon={MapPin}
-            label="Street curb barrier (LiDAR pilot mesh — flies to north Staten Island)"
+            label="LiDAR curb elevation (purple heatmap — pilot mesh north Staten Island)"
             checked={layers.curbLidar}
             onChange={(v) => onLayersChange({ ...layers, curbLidar: v })}
           />

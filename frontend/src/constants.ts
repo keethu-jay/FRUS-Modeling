@@ -8,8 +8,8 @@ export const CURB_LAYER_MIN_ZOOM = 13
 
 /**
  * WGS84 extent of the packaged curb mesh (`curbs_web.geojson`).
- * Pilot LiDAR slice sits near the Kill Van Kull (north Staten Island) — not Manhattan;
- * the map must fly here or curbs look “missing” while centered on Midtown.
+ * This pilot LiDAR extract only covers north Staten Island / Kill Van Kull — not Manhattan.
+ * We optionally pan here when the layer turns on and that bbox is off-screen.
  */
 export const CURB_DATA_BOUNDS = [
   [-74.024, 40.462],
