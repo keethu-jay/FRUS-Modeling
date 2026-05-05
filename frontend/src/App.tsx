@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RAIN_INCH_MIN, TIME_STEP_MAX_FLOOD, TIME_STEP_MIN } from './constants'
 import DepthLegend from './components/DepthLegend'
+import TerrainHillshadeLegend from './components/TerrainHillshadeLegend'
 import MapContainer from './components/MapContainer'
 import Sidebar from './components/Sidebar'
 import type { LayerVisibility } from './types'
@@ -14,8 +15,9 @@ export default function App() {
   const [timeStep, setTimeStep] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [layers, setLayers] = useState<LayerVisibility>({
-    permeabilityNdvi: false,
-    curbLidar: false,
+    // Default: show topo + permeability vector overlays from shapefile zips
+    permeabilityNdvi: true,
+    topographicRelief: true,
     catchBasins: false,
   })
 
@@ -50,6 +52,10 @@ export default function App() {
         onLayersChange={onLayersChange}
       />
       <DepthLegend visible={rainfallInches >= RAIN_INCH_MIN} />
+      <TerrainHillshadeLegend
+        visible={layers.topographicRelief}
+        liftForDepthLegend={rainfallInches >= RAIN_INCH_MIN}
+      />
       {accessToken && (
         <footer className="pointer-events-none fixed bottom-3 left-1/2 z-10 hidden -translate-x-1/2 rounded-full border border-khaki/30 bg-zinc-950/90 px-3 py-1 text-[10px] text-stone-300/90 backdrop-blur-md sm:block">
           Mapbox · rainfall{' '}

@@ -6,4 +6,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
   plugins: [react(), tailwindcss()],
+  // shpjs + but-unzip use async iteration; pre-bundling breaks at runtime ("but-unzip~2").
+  optimizeDeps: {
+    exclude: ['shpjs'],
+  },
 })

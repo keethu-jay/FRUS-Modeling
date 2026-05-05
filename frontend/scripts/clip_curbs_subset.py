@@ -1,8 +1,12 @@
 """
-Build public/data/vectors/curbs_web.geojson for the browser.
+Build public/data/vectors/curbs_web.geojson for the browser from a full curb export.
 
-The raw curbs.geojson (~70 MB, ~200k lines) overwhelms Mapbox GL in many browsers.
-This script decimates + simplifies while preserving barrier_height_ft.
+Place a **citywide** `curbs.geojson` (LiDAR curb mesh with `barrier_height_ft`) in
+`public/data/vectors/`. The full file is large (~70 MB); this script decimates +
+simplifies while preserving `barrier_height_ft` for lighter loads.
+
+The web app defaults to `data/vectors/curbs.geojson` (full mesh). For dev, set
+`VITE_CURBS_GEOJSON=data/vectors/curbs_web.geojson` in `.env` to use this output.
 
 Usage:
   python frontend/scripts/clip_curbs_subset.py

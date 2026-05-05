@@ -1,7 +1,7 @@
 /**
  * PermeabilityMaskMap — stand-alone map for the NYC permeability raster tileset.
  *
- * Renders the binary NDVI permeability mask (Tileset: keethu-j.7x6izdee) using
+ * Renders the binary NDVI permeability mask (Tileset: keethu-j.1k71qhkf) using
  * Mapbox GL's raster-color expression:
  *   value 0 → fully transparent  (impermeable / nodata)
  *   value 1 → vibrant green      (permeable soil / vegetation)
@@ -22,7 +22,7 @@ import { NYC_CENTER, DEFAULT_ZOOM } from '../constants'
 
 // ── Layer constants ───────────────────────────────────────────────────────────
 
-const TILESET_ID = 'keethu-j.7x6izdee'
+const TILESET_ID = 'keethu-j.1k71qhkf'
 const SOURCE_ID  = 'perm-tileset'
 const LAYER_ID   = 'perm-raster'
 

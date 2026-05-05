@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import {
   CloudRain,
   Layers,
-  MapPin,
+  Leaf,
   Mountain,
   Pause,
   Play,
@@ -81,7 +81,7 @@ export default function Sidebar({
           Eco-Sentry NYC
         </h1>
         <p className="mt-0.5 text-xs leading-relaxed text-stone-300">
-          Urban flood modeling — NDVI permeability + LiDAR DEM + 2D SWE solver.
+          Urban flood modeling — permeability mask vectors + LiDAR curbs + 2D SWE solver.
         </p>
       </div>
 
@@ -180,18 +180,18 @@ export default function Sidebar({
         </div>
         <div className="flex flex-col gap-2">
           <ToggleRow
-            id="layer-ndvi"
+            id="layer-terrain"
             icon={Mountain}
-            label="Permeability mask (NDVI)"
-            checked={layers.permeabilityNdvi}
-            onChange={(v) => onLayersChange({ ...layers, permeabilityNdvi: v })}
+            label="Topography (Mapbox eco_topo_nyc_* tilesets + LiDAR curbs)"
+            checked={layers.topographicRelief}
+            onChange={(v) => onLayersChange({ ...layers, topographicRelief: v })}
           />
           <ToggleRow
-            id="layer-curb"
-            icon={MapPin}
-            label="LiDAR curb elevation (purple heatmap — pilot mesh north Staten Island)"
-            checked={layers.curbLidar}
-            onChange={(v) => onLayersChange({ ...layers, curbLidar: v })}
+            id="layer-perm"
+            icon={Leaf}
+            label="Permeability mask (mask_vector.zip)"
+            checked={layers.permeabilityNdvi}
+            onChange={(v) => onLayersChange({ ...layers, permeabilityNdvi: v })}
           />
           <ToggleRow
             id="layer-catch"

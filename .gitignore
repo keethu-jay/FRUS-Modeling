@@ -13,6 +13,9 @@ flood_outputs/
 frontend/public/data/permeability/
 frontend/public/data/flood/
 
+# Split shapefile chunks for Mapbox uploads (large); regenerate with scripts/split_shapefile_zip.py
+frontend/public/data/topo_chunks/
+
 # Python
 __pycache__/
 *.pyc
@@ -21,3 +24,17 @@ __pycache__/
 
 # Turing job logs
 turing/slurm/logs/
+
+# Local Claude / IDE (machine-specific)
+.claude/
+
+# Oversized GIS inputs — regenerate locally or fetch separately (would blow repo limits)
+/topo_vector.zip
+/mask_vector.zip
+/nyc_curbs.geojson
+/NYCDEP*.geojson
+/New_York_City_Climate*.csv
+/final_mask*.tif
+/flood_scenarios.zip
+frontend/public/data/topo_vector.zip
+frontend/public/data/mask_vector.zip
