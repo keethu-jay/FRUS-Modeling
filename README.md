@@ -32,7 +32,15 @@ LiDAR point cloud analysis (`turing/detect_curbs.py`) identifies curb-gutter tra
 Built with React 18 + TypeScript + Vite + Tailwind CSS + Mapbox GL JS v3. Includes a rainfall slider, per-layer toggles, a fly-to button for the NJ Palisades LiDAR pilot area, a color-ramp elevation legend, and a flood scenario legend.
 
 **Paper figures**
-Four publication-ready figures were generated in `Papers/` using matplotlib + scipy + numpy: a min-filter vs average-filter cell diagram, an elevation histogram comparison (8-bit DEM vs Float32 LAZ), a synthetic raster surface comparison, and a morphological sink difference raster.
+Four publication-ready figures generated in `Papers/` using matplotlib + scipy + numpy:
+
+| Figure 1 — Min-filter vs Average-filter | Figure 2 — Elevation Histograms |
+|:---:|:---:|
+| ![Figure 1](Papers/fig1_minfilter_diagram.png) | ![Figure 2](Papers/fig2_elevation_histograms.png) |
+
+| Figure 3 — Raster Surface Comparison | Figure 4 — Morphological Sink Raster |
+|:---:|:---:|
+| ![Figure 3](Papers/fig3_raster_comparison.png) | ![Figure 4](Papers/fig4_sink_raster.png) |
 
 ---
 
@@ -148,10 +156,14 @@ LiDAR LAZ point cloud
 ## Key Technical Decisions
 
 **Min-filter vs average filter for LiDAR**
-A 1 m average filter blends curb-face and gutter-floor points into a single non-physical mid-height value, erasing the barrier. A 0.1 m min-filter keeps each cell's lowest point, preserving the gutter floor and the curb step as separate cells — critical for accurate flood routing. See Figure 1 (`Papers/fig1_minfilter_diagram.png`).
+A 1 m average filter blends curb-face and gutter-floor points into a single non-physical mid-height value, erasing the barrier. A 0.1 m min-filter keeps each cell's lowest point, preserving the gutter floor and the curb step as separate cells — critical for accurate flood routing.
+
+![Figure 1](Papers/fig1_minfilter_diagram.png)
 
 **8-bit DEM resolution gap**
-NOAA 1 m DEMs store elevation as 8-bit integers with ~1 m quantization. The cloudburst inundation threshold (≈0.076 m for 3 in/hr rainfall) falls entirely in the rounding gap and is unresolvable. The Float32 LAZ-derived raster at 0.1 m resolution captures sub-centimeter variation and resolves this threshold. See Figure 2 (`Papers/fig2_elevation_histograms.png`).
+NOAA 1 m DEMs store elevation as 8-bit integers with ~1 m quantization. The cloudburst inundation threshold (≈0.076 m for 3 in/hr rainfall) falls entirely in the rounding gap and is unresolvable. The Float32 LAZ-derived raster at 0.1 m resolution captures sub-centimeter variation and resolves this threshold.
+
+![Figure 2](Papers/fig2_elevation_histograms.png)
 
 **Segment chaining for shore contours**
 GDAL contour produces disconnected pixel-scale segments from a coastal DEM. A greedy nearest-endpoint algorithm rebuilds continuous coastline chains without requiring full graph construction, reducing 2,467 fragments to 336 connected lines in under a second.
