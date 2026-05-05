@@ -1,65 +1,50 @@
-import { useCallback, useEffect, useState } from 'react'
-import { RAIN_INCH_MIN, TIME_STEP_MAX_FLOOD, TIME_STEP_MIN } from './constants'
-import DepthLegend from './components/DepthLegend'
+import { useCallback, useRef, useState } from 'react'
+import { RAIN_INCH_MIN } from './constants'
+import FloodScenarioLegend from './components/FloodScenarioLegend'
 import TerrainHillshadeLegend from './components/TerrainHillshadeLegend'
 import MapContainer from './components/MapContainer'
 import Sidebar from './components/Sidebar'
 import type { LayerVisibility } from './types'
 
-const TICK_MS = 650
-
 export default function App() {
   const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? ''
 
   const [rainfallInches, setRainfallInches] = useState(0)
-  const [timeStep, setTimeStep] = useState(0)
-  const [playing, setPlaying] = useState(false)
   const [layers, setLayers] = useState<LayerVisibility>({
-    // Default: show topo + permeability vector overlays from shapefile zips
     permeabilityNdvi: true,
     topographicRelief: true,
     catchBasins: false,
   })
 
-  const onLayersChange = useCallback((next: LayerVisibility) => {
-    setLayers(next)
-  }, [])
+  const onLayersChange = useCallback((next: LayerVisibility) => setLayers(next), [])
 
-  useEffect(() => {
-    if (!playing) return undefined
-    const id = window.setInterval(() => {
-      setTimeStep((t) => (t >= TIME_STEP_MAX_FLOOD ? TIME_STEP_MIN : t + 1))
-    }, TICK_MS)
-    return () => window.clearInterval(id)
-  }, [playing])
+  // Callback ref populated by MapContainer so sibling components can trigger flyTo
+  const flyToLidarRef = useRef<(() => void) | null>(null)
+  const onFlyToLidar = useCallback(() => flyToLidarRef.current?.(), [])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-zinc-950 font-sans">
       <MapContainer
         accessToken={accessToken}
         rainfallInches={rainfallInches}
-        timeStep={timeStep}
         layers={layers}
+        flyToLidarRef={flyToLidarRef}
       />
       <Sidebar
         rainfallInches={rainfallInches}
         onRainfallChange={setRainfallInches}
-        timeStep={timeStep}
-        onTimeStepChange={(t) => setTimeStep(t)}
-        playing={playing}
-        onPlayingChange={setPlaying}
         layers={layers}
         onLayersChange={onLayersChange}
+        onFlyToLidar={onFlyToLidar}
       />
-      <DepthLegend visible={rainfallInches >= RAIN_INCH_MIN} />
+      <FloodScenarioLegend rainfallInches={rainfallInches} />
       <TerrainHillshadeLegend
         visible={layers.topographicRelief}
-        liftForDepthLegend={rainfallInches >= RAIN_INCH_MIN}
+        liftForFloodLegend={rainfallInches >= RAIN_INCH_MIN}
       />
       {accessToken && (
         <footer className="pointer-events-none fixed bottom-3 left-1/2 z-10 hidden -translate-x-1/2 rounded-full border border-khaki/30 bg-zinc-950/90 px-3 py-1 text-[10px] text-stone-300/90 backdrop-blur-md sm:block">
-          Mapbox · rainfall{' '}
-          {rainfallInches < RAIN_INCH_MIN ? 'off' : `${rainfallInches} in`} · frame {timeStep}
+          Mapbox · {rainfallInches < RAIN_INCH_MIN ? 'flood off' : `scenario ${rainfallInches}`}
         </footer>
       )}
     </div>

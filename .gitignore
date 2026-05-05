@@ -25,8 +25,9 @@ __pycache__/
 # Turing job logs
 turing/slurm/logs/
 
-# Local Claude / IDE (machine-specific)
+# Local IDE / AI assistant config (machine-specific)
 .claude/
+.cursor/
 
 # Oversized GIS inputs — regenerate locally or fetch separately (would blow repo limits)
 /topo_vector.zip
@@ -38,3 +39,10 @@ turing/slurm/logs/
 /flood_scenarios.zip
 frontend/public/data/topo_vector.zip
 frontend/public/data/mask_vector.zip
+
+# Raw LiDAR DEM (859 MB) and large derived intermediates
+/nyc_final_0.1m.tif
+/contours_0.5m.geojson
+/contours_0p5mpgeojson
+/flood_final_portfolio.zip
+frontend/public/data/perm_mask_upload.tif

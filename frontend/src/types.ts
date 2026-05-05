@@ -1,9 +1,9 @@
 export interface LayerVisibility {
-  /** Permeability mask from `mask_vector.zip` (shapefile bundle in `public/`; path override `VITE_MASK_VECTOR_ZIP`). */
+  /** Permeability mask — Mapbox raster tileset `keethu-j.perm_mask_nyc` (NDVI binary mask). */
   permeabilityNdvi: boolean
   /**
-   * Topography: Mapbox vector tilesets (`eco_topo_nyc_p01` … plus p16 splits), optional LiDAR curb GeoJSON
-   * (`VITE_CURBS_GEOJSON`), toggled together.
+   * All elevation layers toggled together: hillshade, terrain-v2 contours, LiDAR curbs,
+   * 1m/2m flood boundary lines, 0.5m LiDAR contours (NJ Palisades DEM).
    */
   topographicRelief: boolean
   catchBasins: boolean
